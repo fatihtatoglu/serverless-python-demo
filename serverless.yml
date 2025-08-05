@@ -1,5 +1,4 @@
 service: python-offline-demo
-frameworkVersion: '3'
 
 plugins:
   - serverless-localstack
