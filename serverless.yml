@@ -1,0 +1,85 @@
+service: python-offline-demo
+frameworkVersion: '3'
+
+plugins:
+  - serverless-lift
+  - serverless-s3-local
+  - serverless-offline-sqs
+  - serverless-offline
+
+provider:
+  name: aws
+  runtime: python3.11
+  region: us-east-1
+  stage: ${opt:stage, 'offline'}
+  environment:
+    DYNAMODB_TABLE: main-table-${self:provider.stage}
+    DYNAMODB_ENDPOINT: ${self:custom.dynamodb.endpoint.${self:provider.stage}}
+
+custom:
+  dynamodb:
+    endpoint:
+      offline: http://localhost:8000
+      prod: https://dynamodb.${self:provider.region}.amazonaws.com
+
+  serverless-offline-sqs:
+    autoCreate: true
+    apiVersion: '2012-11-05'
+    endpoint: http://localhost:9324
+    region: us-east-1
+    accessKeyId: root
+    secretAccessKey: root
+    queueHost: localhost
+
+  s3:
+    port: 4569
+    directory: /tmp
+    buckets:
+      - main-bucket-${self:provider.stage}
+
+functions:
+  createItem:
+    handler: handler.create_item
+    events:
+      - httpApi:
+          path: /create-item
+          method: post
+
+  queueHandler:
+    handler: handler.queue_handler
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt: [MainQueue, Arn]
+
+  s3Handler:
+    handler: handler.s3_handler
+    events:
+      - s3:
+          bucket: main-bucket-${self:provider.stage}
+          event: s3:ObjectCreated:*
+          existing: true
+
+resources:
+  Resources:
+    MainTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: main-table-${self:provider.stage}
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+
+    MainQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: main-queue-${self:provider.stage}
+
+    MainBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: main-bucket-${self:provider.stage}
