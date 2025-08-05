@@ -2,10 +2,11 @@
   "name": "serverless-python-demo",
   "version": "1.0.0",
   "scripts": {
-    "localstack:start": "docker run -d --rm --name localstack -p 127.0.0.1:4566:4566 -p 127.0.0.1:4510-4559:4510-4559 -v /var/run/docker.sock:/var/run/docker.sock localstack/localstack",
-    "localstack:stop": "docker stop localstack",
+    "dev:prepare": "docker compose up -d",
     "dev:start": "serverless deploy --stage offline",
-    "dev:stop": "serverless remove --stage offline"
+    "dev:stop": "serverless remove --stage offline",
+    "dev:info": "serverless info --stage offline",
+    "dev:clean": "docker compose down"
   },
   "devDependencies": {
     "serverless": "^3.39.0",
