@@ -20,7 +20,7 @@ yarn dev:prepare
 ### Run Serverless Offline
 
 ```bash
-yarn dev
+yarn dev:start
 ```
 
 ### Run manual tests

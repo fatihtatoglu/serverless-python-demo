@@ -18,15 +18,23 @@ custom:
       - offline
   endpoints:
     dynamodb:
-      offline: http://localhost:4566
+      offline: http://localstack:4566
 
 functions:
+  healthCheck:
+    handler: handler.health_check
+    runtime: ${self:provider.runtime}
+    events:
+      - http:
+          path: health
+          method: get
+
   createItem:
     handler: handler.create_item
     runtime: ${self:provider.runtime}
     events:
-      - httpApi:
-          path: /create-item
+      - http:
+          path: create-item
           method: post
 
   queueHandler:
