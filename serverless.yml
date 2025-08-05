@@ -1,12 +1,11 @@
-service: python-offline-demo
-frameworkVersion: '3'
+service: serverless-python-demo
 
 plugins:
   - serverless-localstack
 
 provider:
   name: aws
-  runtime: python3.11
+  runtime: python3.10
   region: us-east-1
   stage: ${opt:stage, 'offline'}
   environment:
