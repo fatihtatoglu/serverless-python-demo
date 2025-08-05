@@ -40,6 +40,7 @@ custom:
 functions:
   createItem:
     handler: handler.create_item
+    runtime: ${self:provider.runtime}
     events:
       - httpApi:
           path: /create-item
@@ -47,6 +48,7 @@ functions:
 
   queueHandler:
     handler: handler.queue_handler
+    runtime: ${self:provider.runtime}
     events:
       - sqs:
           arn:
@@ -54,6 +56,7 @@ functions:
 
   s3Handler:
     handler: handler.s3_handler
+    runtime: ${self:provider.runtime}
     events:
       - s3:
           bucket: main-bucket-${self:provider.stage}
