@@ -14,9 +14,7 @@ yarn install
 ### Start local AWS emulators
 
 ```bash
-yarn setup:sqs          # ElasticMQ (SQS) with web UI at http://localhost:9325
-yarn setup:dynamodb     # DynamoDB Local
-yarn dynamodb-admin     # DynamoDB admin UI at http://localhost:8001
+yarn dev:prepare
 ```
 
 ### Run Serverless Offline
@@ -55,5 +53,5 @@ aws --endpoint-url http://localhost:4569 \
 ### Tear everything down when finished
 
 ```bash
-yarn teardown
+yarn dev:clean
 ```
