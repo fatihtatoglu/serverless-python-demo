@@ -4,7 +4,7 @@ import boto3
 
 dynamodb = boto3.resource(
     "dynamodb",
-    endpoint_url=os.environ.get("DYNAMODB_ENDPOINT")
+    endpoint_url=os.environ.get("DYNAMODB_ENDPOINT") or None
 )
 table = dynamodb.Table(os.environ["DYNAMODB_TABLE"])
 

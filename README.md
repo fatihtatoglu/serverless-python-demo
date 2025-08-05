@@ -1,27 +1,28 @@
 # serverless-python-demo
 
-## Quick‑start workflow
+## Quick-start workflow
 
-This workflow avoids installing local JARs or standalone emulators; all infrastructure services run inside disposable Docker containers, while Serverless Framework manages the Lambda code and HTTP emulation.
+All local services run inside Docker containers. Yarn scripts handle setup and teardown.
 
 ### Install dependencies
 
 ```bash
-npm install
+npm install -g yarn           # if yarn is not installed
+yarn install
 ```
 
-### Spin up Dockerised emulators
+### Start local AWS emulators
 
 ```bash
-npm run setup:sqs          # ElasticMQ
-npm run setup:dynamodb     # DynamoDB Local
-npm run dynamodb-admin     # optional UI at http://localhost:8001
+yarn setup:sqs          # ElasticMQ (SQS) with web UI at http://localhost:9325
+yarn setup:dynamodb     # DynamoDB Local
+yarn dynamodb-admin     # DynamoDB admin UI at http://localhost:8001
 ```
 
 ### Run Serverless Offline
 
 ```bash
-npm run dev
+yarn dev
 ```
 
 ### Run manual tests
@@ -54,5 +55,5 @@ aws --endpoint-url http://localhost:4569 \
 ### Tear everything down when finished
 
 ```bash
-npm run teardown
+yarn teardown
 ```
