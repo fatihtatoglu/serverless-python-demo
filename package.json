@@ -2,19 +2,12 @@
   "name": "serverless-python-demo",
   "version": "1.0.0",
   "scripts": {
-    "setup:sqs": "docker run -d --rm --name local-sqs -p 9324:9324 -p 9325:9325 softwaremill/elasticmq-native",
-    "teardown:sqs": "docker stop local-sqs",
-    "setup:dynamodb": "docker run -d --rm --name local-dynamodb -p 8000:8000 amazon/dynamodb-local",
-    "teardown:dynamodb": "docker stop local-dynamodb",
-    "dynamodb-admin": "docker run --rm -d --name dynamodb-admin --network host -p 8001:8001 aaronshaf/dynamodb-admin",
-    "dev": "serverless offline start --stage offline",
-    "teardown": "npm run teardown:sqs && npm run teardown:dynamodb"
+    "localstack:start": "docker run -d --rm --name localstack -p 4566:4566 localstack/localstack",
+    "localstack:stop": "docker stop localstack",
+    "dev": "serverless deploy --stage offline"
   },
   "devDependencies": {
     "serverless": "^3.38.0",
-    "serverless-offline": "^13.0.0",
-    "serverless-s3-local": "^0.6.21",
-    "serverless-offline-sqs": "^6.0.0",
-    "serverless-lift": "^1.24.0"
+    "serverless-localstack": "^1.1.4"
   }
 }
