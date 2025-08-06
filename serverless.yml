@@ -1,79 +1,329 @@
 service: serverless-python-demo
 
 plugins:
+  - serverless-dotenv-plugin
   - serverless-localstack
+
+custom:
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'us-east-1'}
+  tableName:
+    dev: ${env:MAIN_TABLE, 'main-table'}
+    prod: ${self:service}-main-table-${self:custom.stage}
+  outboxTableName:
+    dev: ${env:OUTBOX_TABLE, 'outbox'}
+    prod: ${self:service}-outbox-${self:custom.stage}
+  mainQueue:
+    dev: main-queue
+    prod: ${self:service}-main-queue-${self:custom.stage}
+  aiQueue:
+    dev: ai-queue
+    prod: ${self:service}-ai-queue-${self:custom.stage}
+  platformQueue:
+    dev: platform-queue
+    prod: ${self:service}-platform-queue-${self:custom.stage}
+  bucketName:
+    dev: main-bucket
+    prod: ${self:service}-main-bucket-${self:custom.stage}
+  nodeEnv:
+    dev: development
+    prod: production
+  dotenv:
+    path: ./.env.${self:custom.nodeEnv.${self:custom.stage}}
+    include:
+      - REGION
+      - MAIN_TABLE
+      - OUTBOX_TABLE
+      - LOG_LEVEL
+      - DLQ_THRESHOLD
+      - BATCH_SIZE
 
 provider:
   name: aws
   runtime: python3.10
-  region: us-east-1
-  stage: ${opt:stage, 'offline'}
+  stage: ${self:custom.stage}
+  region: ${self:custom.region}
+  timeout: 30
+  memorySize: 512
+  logRetentionInDays: 30
   environment:
-    DYNAMODB_TABLE: main-table-${self:provider.stage}
-    DYNAMODB_ENDPOINT: ${self:custom.endpoints.dynamodb.${self:provider.stage}, ''}
+    REGION: ${self:custom.region}
+    MAIN_TABLE: ${self:custom.tableName.${self:custom.stage}}
+    OUTBOX_TABLE: ${self:custom.outboxTableName.${self:custom.stage}}
+    LOG_LEVEL: ${env:LOG_LEVEL, 'INFO'}
+    DLQ_THRESHOLD: ${env:DLQ_THRESHOLD, '5'}
+    BATCH_SIZE: ${env:BATCH_SIZE, '10'}
+    NODE_ENV: ${self:custom.nodeEnv.${self:custom.stage}}
+  iam:
+    role:
+      statements:
+        # CloudWatch Logs permissions (required for all Lambda functions)
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource:
+            - "arn:aws:logs:${self:custom.region}:*:log-group:/aws/lambda/*"
 
-custom:
-  localstack:
-    stages:
-      - offline
-  endpoints:
-    dynamodb:
-      offline: http://localstack:4566
+        # DynamoDB permissions scoped to specific tables
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:BatchGetItem
+            - dynamodb:BatchWriteItem
+          Resource:
+            - "arn:aws:dynamodb:${self:custom.region}:*:table/${self:custom.tableName.${self:custom.stage}}"
+            - "arn:aws:dynamodb:${self:custom.region}:*:table/${self:custom.tableName.${self:custom.stage}}/index/*"
+            - "arn:aws:dynamodb:${self:custom.region}:*:table/${self:custom.outboxTableName.${self:custom.stage}}"
+            - "arn:aws:dynamodb:${self:custom.region}:*:table/${self:custom.outboxTableName.${self:custom.stage}}/index/*"
 
-functions:
-  healthCheck:
-    handler: handler.health_check
-    runtime: ${self:provider.runtime}
-    events:
-      - http:
-          path: health
-          method: get
+        # DynamoDB Streams permissions
+        - Effect: Allow
+          Action:
+            - dynamodb:DescribeStream
+            - dynamodb:GetRecords
+            - dynamodb:GetShardIterator
+            - dynamodb:ListStreams
+          Resource:
+            - "arn:aws:dynamodb:${self:custom.region}:*:table/${self:custom.tableName.${self:custom.stage}}/stream/*"
+            - "arn:aws:dynamodb:${self:custom.region}:*:table/${self:custom.outboxTableName.${self:custom.stage}}/stream/*"
 
-  createItem:
-    handler: handler.create_item
-    runtime: ${self:provider.runtime}
-    events:
-      - http:
-          path: create-item
-          method: post
+        # SQS permissions scoped to specific queues
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+            - sqs:GetQueueUrl
+            - sqs:ChangeMessageVisibility
+          Resource:
+            - "arn:aws:sqs:${self:custom.region}:*:${self:custom.mainQueue.${self:custom.stage}}"
+            - "arn:aws:sqs:${self:custom.region}:*:${self:custom.mainQueue.${self:custom.stage}}-dlq"
+            - "arn:aws:sqs:${self:custom.region}:*:${self:custom.aiQueue.${self:custom.stage}}"
+            - "arn:aws:sqs:${self:custom.region}:*:${self:custom.aiQueue.${self:custom.stage}}-dlq"
+            - "arn:aws:sqs:${self:custom.region}:*:${self:custom.platformQueue.${self:custom.stage}}"
+            - "arn:aws:sqs:${self:custom.region}:*:${self:custom.platformQueue.${self:custom.stage}}-dlq"
 
-  queueHandler:
-    handler: handler.queue_handler
-    runtime: ${self:provider.runtime}
-    events:
-      - sqs:
-          arn:
-            Fn::GetAtt: [MainQueue, Arn]
+        # S3 permissions scoped to specific bucket
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+            - s3:DeleteObject
+            - s3:ListBucket
+            - s3:GetObjectVersion
+          Resource:
+            - "arn:aws:s3:::${self:custom.bucketName.${self:custom.stage}}"
+            - "arn:aws:s3:::${self:custom.bucketName.${self:custom.stage}}/*"
 
-  s3Handler:
-    handler: handler.s3_handler
-    runtime: ${self:provider.runtime}
-    events:
-      - s3:
-          bucket: main-bucket-${self:provider.stage}
-          event: s3:ObjectCreated:*
-          existing: true
+        # CloudWatch Events permissions (for scheduled functions)
+        - Effect: Allow
+          Action:
+            - events:PutEvents
+          Resource: "*"
 
 resources:
   Resources:
+    LocalSQSQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:custom.mainQueue.${self:custom.stage}}
+        VisibilityTimeout: 180
+        MessageRetentionPeriod: 1209600 # 14 days
+        RedrivePolicy:
+          deadLetterTargetArn:
+            Fn::GetAtt:
+              - LocalSQSQueueDLQ
+              - Arn
+          maxReceiveCount: ${env:DLQ_THRESHOLD, '5'}
+    LocalSQSQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:custom.mainQueue.${self:custom.stage}}-dlq
+        MessageRetentionPeriod: 1209600 # 14 days
+    AIProcessorQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:custom.aiQueue.${self:custom.stage}}
+        VisibilityTimeout: 180
+        MessageRetentionPeriod: 1209600 # 14 days
+        RedrivePolicy:
+          deadLetterTargetArn:
+            Fn::GetAtt:
+              - AIProcessorQueueDLQ
+              - Arn
+          maxReceiveCount: ${env:DLQ_THRESHOLD, '5'}
+    AIProcessorQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:custom.aiQueue.${self:custom.stage}}-dlq
+        MessageRetentionPeriod: 1209600 # 14 days
+    PlatformQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:custom.platformQueue.${self:custom.stage}}
+        VisibilityTimeout: 180
+        MessageRetentionPeriod: 1209600 # 14 days
+        RedrivePolicy:
+          deadLetterTargetArn:
+            Fn::GetAtt:
+              - PlatformQueueDLQ
+              - Arn
+          maxReceiveCount: ${env:DLQ_THRESHOLD, '5'}
+    PlatformQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:custom.platformQueue.${self:custom.stage}}-dlq
+        MessageRetentionPeriod: 1209600 # 14 days
     MainTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: main-table-${self:provider.stage}
+        TableName: ${self:custom.tableName.${self:custom.stage}}
         AttributeDefinitions:
           - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
             AttributeType: S
         KeySchema:
           - AttributeName: PK
             KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
         BillingMode: PAY_PER_REQUEST
-
-    MainQueue:
-      Type: AWS::SQS::Queue
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES
+        DeletionProtectionEnabled: false
+    OutboxTable:
+      Type: AWS::DynamoDB::Table
       Properties:
-        QueueName: main-queue-${self:provider.stage}
-
+        TableName: ${self:custom.outboxTableName.${self:custom.stage}}
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+        DeletionProtectionEnabled: false
     MainBucket:
       Type: AWS::S3::Bucket
       Properties:
-        BucketName: main-bucket-${self:provider.stage}
+        BucketName: ${self:custom.bucketName.${self:custom.stage}}
+
+  Outputs:
+    SQSQueueUrl:
+      Description: URL of the main SQS queue
+      Value:
+        Ref: LocalSQSQueue
+      Export:
+        Name: ${self:service}-${self:custom.stage}-SQSQueue
+    SQSQueueArn:
+      Description: ARN of the main SQS queue
+      Value:
+        Fn::GetAtt:
+          - LocalSQSQueue
+          - Arn
+      Export:
+        Name: ${self:service}-${self:custom.stage}-SQSQueueArn
+    AIProcessorQueueUrl:
+      Description: URL of the AI processor queue
+      Value:
+        Ref: AIProcessorQueue
+      Export:
+        Name: ${self:service}-${self:custom.stage}-AIProcessorQueue
+    AIProcessorQueueArn:
+      Description: ARN of the AI processor queue
+      Value:
+        Fn::GetAtt:
+          - AIProcessorQueue
+          - Arn
+      Export:
+        Name: ${self:service}-${self:custom.stage}-AIProcessorQueueArn
+    PlatformQueueUrl:
+      Description: URL of the platform queue
+      Value:
+        Ref: PlatformQueue
+      Export:
+        Name: ${self:service}-${self:custom.stage}-PlatformQueue
+    PlatformQueueArn:
+      Description: ARN of the platform queue
+      Value:
+        Fn::GetAtt:
+          - PlatformQueue
+          - Arn
+      Export:
+        Name: ${self:service}-${self:custom.stage}-PlatformQueueArn
+    MainTableName:
+      Description: Name of the main DynamoDB table
+      Value:
+        Ref: MainTable
+      Export:
+        Name: ${self:service}-${self:custom.stage}-MainTable
+    OutboxTableName:
+      Description: Name of the outbox DynamoDB table
+      Value:
+        Ref: OutboxTable
+      Export:
+        Name: ${self:service}-${self:custom.stage}-OutboxTable
+
+functions:
+  main_handler:
+    handler: handler.main_handler
+    events:
+      - http:
+          path: /
+          method: ANY
+
+  health_handler:
+    handler: handler.health_handler
+    events:
+      - http:
+          path: /health
+          method: GET
+
+  scheduled_handler:
+    handler: handler.scheduled_handler
+    events:
+      - schedule:
+          rate: rate(1 minute)
+          enabled: true
+
+  s3_handler:
+    handler: handler.s3_handler
+    events:
+      - s3:
+          bucket: ${self:custom.bucketName.${self:custom.stage}}
+          event: s3:ObjectCreated:*
+
+  sqs_handler:
+    handler: handler.sqs_handler
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - LocalSQSQueue
+              - Arn
+          batchSize: ${env:BATCH_SIZE, '10'}
+
+  dynamodb_stream_handler:
+    handler: handler.dynamodb_stream_handler
+    events:
+      - stream:
+          type: dynamodb
+          arn:
+            Fn::GetAtt:
+              - MainTable
+              - StreamArn
+          batchSize: ${env:BATCH_SIZE, '10'}
+          startingPosition: LATEST

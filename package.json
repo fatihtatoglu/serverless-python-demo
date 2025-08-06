@@ -3,13 +3,14 @@
   "version": "1.0.0",
   "scripts": {
     "dev:prepare": "docker compose up -d",
-    "dev:start": "serverless deploy --stage offline",
-    "dev:stop": "serverless remove --stage offline",
-    "dev:info": "serverless info --stage offline",
+    "dev:start": "serverless deploy --stage dev",
+    "dev:stop": "serverless remove --stage dev",
+    "dev:info": "serverless info --stage dev",
     "dev:clean": "docker compose down"
   },
   "devDependencies": {
     "serverless": "^3.39.0",
-    "serverless-localstack": "^1.3.1"
+    "serverless-localstack": "^1.3.1",
+    "serverless-dotenv-plugin": "^6.0.0"
   }
 }
